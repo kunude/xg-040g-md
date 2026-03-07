@@ -21,7 +21,7 @@ jobs:
             exit 1
           fi
 
-      - name: Sync fork branch with upstream
+      - name: Sync fork branch with upstream (openwrt-25.12)
         env:
           GH_TOKEN: ${{ secrets.OPENWRT_SYNC_TOKEN }}
         run: |
@@ -29,9 +29,9 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             /repos/xiangtailiang/openwrt/merge-upstream \
-            -f branch='openwrt-25.12'
+            -f branch='openwrt-25.12' || true # Prevent failure if no updates or conflicts
 
-      - name: Trigger firmware build workflow
+      - name: Trigger firmware build workflow (openwrt-25.12)
         env:
           GH_TOKEN: ${{ secrets.OPENWRT_SYNC_TOKEN }}
         run: |
@@ -41,6 +41,27 @@ jobs:
             /repos/xiangtailiang/OpenWrt-for-XG-040G-MD/actions/workflows/xg-040g-md-openwrt-25.12.yml/dispatches \
             -f ref='main'
 
+      - name: Sync fork branch with upstream (main)
+        env:
+          GH_TOKEN: ${{ secrets.OPENWRT_SYNC_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/xiangtailiang/openwrt/merge-upstream \
+            -f branch='main' || true # Prevent failure if no updates or conflicts
+
+      - name: Trigger firmware build workflow (main)
+        env:
+          GH_TOKEN: ${{ secrets.OPENWRT_SYNC_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/xiangtailiang/OpenWrt-for-XG-040G-MD/actions/workflows/xg-040g-md-openwrt-main.yml/dispatches \
+            -f ref='main'
+
       - name: Summary
         run: |
           echo "✅ Synced xiangtailiang/openwrt:openwrt-25.12 with upstream and triggered xg-040g-md-openwrt-25.12.yml"
+          echo "✅ Synced xiangtailiang/openwrt:main with upstream and triggered xg-040g-md-openwrt-main.yml"
