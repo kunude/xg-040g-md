@@ -19,7 +19,7 @@ on:
       - ".github/workflows/xg-040g-md-openwrt-main.yml"
       - "config/**"
       - "scripts/**"
-     # - "patch/**"
+      - "patch/**"
       - "feeds.conf.default"
 
 env:
