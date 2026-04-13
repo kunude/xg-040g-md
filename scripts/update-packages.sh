@@ -137,6 +137,16 @@ if [ -d "openwrt-passwall-packages" ]; then
 	rm -rf openwrt-passwall-packages
 fi
 
+# 添加打印服务包
+echo " "
+echo "=========================================="
+echo "Installing print service packages..."
+echo "=========================================="
+
+# 添加 cups 和 luci-app-cups
+UPDATE_PACKAGE "cups" "openwrt/packages" "master"
+UPDATE_PACKAGE "luci-app-cups" "openwrt/luci" "master"
+
 echo " "
 echo "=========================================="
 echo "Package updates completed!"

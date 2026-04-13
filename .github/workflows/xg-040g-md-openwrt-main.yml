@@ -137,6 +137,20 @@ jobs:
           cp -fv "${CONFIG_FILE}" openwrt/.config
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
+          
+          # 重新应用打印服务配置，确保不会被 defconfig 覆盖
+          echo "Re-applying print service configuration..."
+          cat >> .config << 'EOF'
+          #
+          # Print Service (CUPS)
+          #
+          CONFIG_PACKAGE_cups=y                     # CUPS print server
+          CONFIG_PACKAGE_luci-app-cups=y            # CUPS LuCI interface
+          CONFIG_PACKAGE_luci-i18n-cups-zh-cn=y     # CUPS Chinese language
+          CONFIG_PACKAGE_lpr=y                      # LPR line printer daemon
+          CONFIG_PACKAGE_lpq=y                      # LPR queue management tools
+          EOF
+          echo "Print service configuration applied."
 
       - name: Upload build config files
         uses: actions/upload-artifact@v6
