@@ -143,9 +143,9 @@ echo "=========================================="
 echo "Installing print service packages..."
 echo "=========================================="
 
-# 添加 cups 和 luci-app-cups
-UPDATE_PACKAGE "cups" "openwrt/packages" "master"
-UPDATE_PACKAGE "luci-app-cups" "openwrt/luci" "master"
+# 从 cups-for-openwrt 仓库添加 cups 和 luci-app-cups
+UPDATE_PACKAGE "cups" "TheMMcOfficial/cups-for-openwrt" "master"
+UPDATE_PACKAGE "luci-app-cups" "TheMMcOfficial/cups-for-openwrt" "master"
 
 echo " "
 echo "=========================================="
