@@ -131,12 +131,49 @@ jobs:
         run: |
           chmod +x $GITHUB_WORKSPACE/scripts/update-packages.sh
           bash $GITHUB_WORKSPACE/scripts/update-packages.sh
-          
+
+      - name: Debug CUPS Feed Status
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS FEED DEBUG START ====="
+          echo "检查 CUPS 是否在已安装的 feeds 中:"
+          ./scripts/feeds list | grep -i cups || echo "CUPS 未在 feeds 中找到"
+          echo "===== CUPS FEED DEBUG END ====="
+
       - name: Copy configuration and defconfig
         run: |
           cp -fv "${CONFIG_FILE}" openwrt/.config
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
+
+      - name: Debug CUPS Config Status
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS CONFIG DEBUG START ====="
+          echo "检查 .config 中 CUPS 的最终状态:"
+          grep "CONFIG_PACKAGE_cups" .config || echo "CUPS 未被选中"
+          grep "CONFIG_PACKAGE_luci-app-cups" .config || echo "LuCI-CUPS 未被选中"
+          echo "检查关键依赖状态:"
+          grep "CONFIG_PACKAGE_libusb-1.0" .config || echo "libusb 未选中"
+          echo "===== CUPS CONFIG DEBUG END ====="
+
+      - name: Build CUPS separately
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS COMPILATION DEBUG START ====="
+          echo "查找 CUPS 包路径..."
+          find package -name "cups" -type d | head -5
+          echo "单独编译 CUPS 软件包以捕获错误..."
+          # 尝试编译 CUPS，使用 V=s 打印详细日志
+          if find package -name "cups" -type d | grep -q "cups"; then
+            make package/network/services/cups/compile V=s -j1 || {
+              echo "CUPS 编译失败!"
+              exit 1
+            }
+          else
+            echo "警告: 未找到 CUPS 包目录，跳过单独编译"
+          fi
+          echo "===== CUPS COMPILATION DEBUG END ====="
 
       - name: Upload build config files
         uses: actions/upload-artifact@v6
@@ -190,6 +227,18 @@ jobs:
         with:
           path: /mnt/openwrt/ccache
           key: ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-ccache-v2-${{ github.run_id }}
+
+      - name: Debug CUPS IPK Output
+        if: env.UPLOAD_FIRMWARE == 'true'
+        run: |
+          echo "===== CUPS ARTIFACT DEBUG START ====="
+          echo "搜索生成的 CUPS 安装包:"
+          find bin/packages -name "*cups*.ipk" 2>/dev/null || echo "未找到 CUPS ipk"
+          echo "检查安装包大小:"
+          find bin/packages -name "*cups*.ipk" -exec ls -lh {} \; 2>/dev/null || echo "无法获取 CUPS ipk 大小"
+          echo "检查固件目录中是否包含 cups 相关文件:"
+          find bin/targets -name "*cups*" 2>/dev/null || echo "固件中未找到 cups 文件"
+          echo "===== CUPS ARTIFACT DEBUG END ====="
 
       - name: Prepare firmware artifacts path
         id: organize
