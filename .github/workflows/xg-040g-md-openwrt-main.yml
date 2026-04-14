@@ -157,25 +157,6 @@ jobs:
           grep "CONFIG_PACKAGE_libusb-1.0" .config || echo "libusb 未选中"
           echo "===== CUPS CONFIG DEBUG END ====="
 
-      - name: Build CUPS separately
-        working-directory: ./openwrt
-        run: |
-          echo "===== CUPS COMPILATION DEBUG START ====="
-          echo "查找 CUPS 包路径..."
-          find package -name "cups" -type d | head -5
-          echo "单独编译 CUPS 软件包以捕获错误..."
-          # 尝试编译 CUPS，使用 V=s 打印详细日志
-          if find package -name "cups" -type d | grep -q "cups"; then
-            # 使用正确的编译路径（lede-cups 仓库中的路径）
-            make package/lede-cups/cups/compile V=s -j1 || {
-              echo "CUPS 编译失败!"
-              exit 1
-            }
-          else
-            echo "警告: 未找到 CUPS 包目录，跳过单独编译"
-          fi
-          echo "===== CUPS COMPILATION DEBUG END ====="
-
       - name: Upload build config files
         uses: actions/upload-artifact@v6
         with:

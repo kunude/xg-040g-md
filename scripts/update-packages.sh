@@ -77,6 +77,18 @@ PATCH_PASSWALL_GLOBAL_LUA() {
 
 echo "Starting package updates..."
 
+# 修复 OpenWrt 25.12 的 libdeflate-gzip 问题
+echo " "
+echo "=========================================="
+echo "Fixing OpenWrt 25.12 libdeflate-gzip issue..."
+echo "=========================================="
+# 确保 libdeflate-gzip 工具存在
+if [ -d "../staging_dir/host/bin" ]; then
+    # 创建符号链接或安装缺失的工具
+    ln -sf /usr/bin/gzip "../staging_dir/host/bin/libdeflate-gzip" 2>/dev/null || \
+    echo "Warning: Could not create libdeflate-gzip symlink, build may fail"
+fi
+
 # 首先删除 feeds 中的 sing-box 相关包，避免与第三方包冲突
 echo " "
 echo "=========================================="
