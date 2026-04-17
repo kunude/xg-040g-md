@@ -152,10 +152,14 @@ jobs:
           echo "===== EXPLICIT CUPS INSTALLATION ====="
           echo "强制安装 CUPS 核心包:"
           ./scripts/feeds install cups libcups cups-filters || echo "部分 CUPS 包安装失败"
-          echo "尝试安装 luci-app-cups (新版本):"
-          ./scripts/feeds install luci-app-cups || echo "luci-app-cups 安装失败，尝试其他方法"
+          echo "安装 LPR/LPQ 打印工具:"
+          ./scripts/feeds install lpr lpq || echo "⚠️  lpr/lpq 包可能不存在，使用 cups-client 替代"
+          echo "检查 cups-client 包:"
+          ./scripts/feeds list | grep -i "cups.*client" || echo "cups-client 也不可用"
+          echo "尝试安装 luci-app-cups (main 分支标准包名):"
+          ./scripts/feeds install luci-app-cups || echo "⚠️  luci-app-cups 安装失败"
           echo "检查已安装的包:"
-          ./scripts/feeds list | grep -E "^(cups|libcups|cups-filters|luci-app-cups)" | sort
+          ./scripts/feeds list | grep -E "^(cups|libcups|cups-filters|lpr|lpq|luci-app-cups)" | sort
           echo "===== EXPLICIT INSTALLATION END ====="
 
       - name: Copy configuration and defconfig
@@ -174,19 +178,23 @@ jobs:
           echo "CONFIG_PACKAGE_cups-filters=y" >> .config
           echo "CONFIG_PACKAGE_kmod-usb-printer=y" >> .config
           
+          echo "确保 LPR/LPQ 包被选中:"
+          echo "CONFIG_PACKAGE_lpr=y" >> .config
+          echo "CONFIG_PACKAGE_lpq=y" >> .config
+          
           echo "确保 LuCI 核心包被选中:"
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
           echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
           
-          echo "尝试选择 luci-app-cups (main 分支标准包名):"
+          echo "选择 luci-app-cups (main 分支标准包名):"
           echo "CONFIG_PACKAGE_luci-app-cups=y" >> .config
           
           echo "重新运行 defconfig 以应用更改:"
           make defconfig V=s
           
           echo "验证最终配置:"
-          grep -E "CONFIG_PACKAGE_(cups|libcups|luci|luci-app-cups)" .config | sort
+          grep -E "CONFIG_PACKAGE_(cups|libcups|lpr|lpq|luci|luci-app-cups)" .config | sort
           echo "===== CUPS CONFIG FIX END ====="
 
       - name: Debug CUPS Config Status
@@ -262,12 +270,26 @@ jobs:
         run: |
           echo "===== CUPS ARTIFACT DEBUG START ====="
           echo "搜索生成的 CUPS 安装包:"
-          find bin/packages -name "*cups*.apk" 2>/dev/null || echo "未找到 CUPS apk"
-          echo "检查安装包大小:"
-          find bin/packages -name "*cups*.apk" -exec ls -lh {} \; 2>/dev/null || echo "无法获取 CUPS apk 大小"
-          echo "检查固件目录中是否包含 cups 相关文件:"
-          find bin/targets -name "*cups*" 2>/dev/null || echo "固件中未找到 cups 文件"
+          find bin/packages -name "*cups*.apk" 2>/dev/null || echo "❌ 未找到 CUPS apk"
+          echo "检查 LPR/LPQ 安装包:"
+          find bin/packages -name "*lpr*.apk" -o -name "*lpq*.apk" 2>/dev/null || echo "⚠️  未找到 LPR/LPQ apk"
+          echo "检查 LuCI CUPS 安装包:"
+          find bin/packages -name "*luci*cups*.apk" 2>/dev/null || echo "❌ 未找到 luci-app-cups apk"
+          echo "列出所有 CUPS 相关包:"
+          find bin/packages -name "*.apk" -exec grep -l "cups" {} \; 2>/dev/null | head -10
           echo "===== CUPS ARTIFACT DEBUG END ====="
+
+      - name: Check LPR LPQ Compatibility
+        working-directory: ./openwrt
+        run: |
+          echo "===== LPR LPQ COMPATIBILITY CHECK ====="
+          echo "检查 lpr 包是否存在:"
+          ./scripts/feeds list | grep -i "^lpr$" || echo "⚠️  lpr 包未找到"
+          echo "检查 lpq 包是否存在:"
+          ./scripts/feeds list | grep -i "^lpq$" || echo "⚠️  lpq 包未找到"
+          echo "检查 legacy printing packages:"
+          ./scripts/feeds list | grep -iE "(lpr|lpq|printproto|cups.*client)" | head -10
+          echo "===== COMPATIBILITY CHECK END ====="
 
       - name: Prepare firmware artifacts path
         id: organize
