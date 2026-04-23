@@ -165,6 +165,26 @@ UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "master"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "master"
 UPDATE_PACKAGE "luci-i18n-openclash-zh-cn" "vernesong/OpenClash" "master"
 
+# Copy local packages to the package directory
+echo " "
+echo "=========================================="
+echo "Installing local packages..."
+echo "=========================================="
+
+# Install usbutils package
+if [ -d "/root/.openclaw/workspace/xg-040g-md/packages/usbutils" ]; then
+    echo "Installing usbutils package..."
+    rm -rf ./usbutils
+    cp -rf /root/.openclaw/workspace/xg-040g-md/packages/usbutils ./
+fi
+
+# Install luci-app-alist package
+if [ -d "/root/.openclaw/workspace/xg-040g-md/packages/luci-app-alist" ]; then
+    echo "Installing luci-app-alist package..."
+    rm -rf ./luci-app-alist
+    cp -rf /root/.openclaw/workspace/xg-040g-md/packages/luci-app-alist ./
+fi
+
 echo " "
 echo "=========================================="
 echo "Package updates completed!"

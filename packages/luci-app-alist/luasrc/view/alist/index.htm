@@ -1,0 +1,34 @@
+<%+header%>
+<h2><a id="content" name="content"><%:Alist%></a></h2>
+
+<div class="cbi-section">
+    <div class="cbi-section-node">
+        <p><%:Alist is a file listing service that allows you to browse files through a web interface.%></p>
+        
+        <h3><%:Service Status%></h3>
+        <div id="alist-status">
+            <em><%:Checking status...%></em>
+        </div>
+        
+        <h3><%:Quick Access%></h3>
+        <p>
+            <a href="http://<%=luci.http.getenv("SERVER_NAME")%>:5244" target="_blank" class="action-button">
+                <%:Open Alist Web UI%>
+            </a>
+        </p>
+        
+        <script type="text/javascript">
+            // Check service status
+            XHR.get('<%=luci.dispatcher.build_url("admin/services/alist/status")%>', null, function(x, data) {
+                var status_div = document.getElementById('alist-status');
+                if (data && data.running) {
+                    status_div.innerHTML = '<span style="color: green;"><%:Running%></span> - <%:Listening on port%> ' + (data.port || '5244');
+                } else {
+                    status_div.innerHTML = '<span style="color: red;"><%:Not Running%></span>';
+                }
+            });
+        </script>
+    </div>
+</div>
+
+<%+footer%>
