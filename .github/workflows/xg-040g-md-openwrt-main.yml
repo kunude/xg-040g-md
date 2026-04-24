@@ -199,29 +199,6 @@ jobs:
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
 
-      - name: Fix USBUtils and Alist Configuration
-        working-directory: ./openwrt
-        run: |
-          echo "===== USBUTILS AND ALIST CONFIG FIX START ====="
-          echo "Ensure USBUtils packages are selected:"
-          echo "CONFIG_PACKAGE_usbutils=y" >> .config
-          echo "CONFIG_PACKAGE_lsusb=y" >> .config
-          echo "CONFIG_PACKAGE_usb-devices=y" >> .config
-          
-          echo "Ensure Alist packages are selected:"
-          echo "CONFIG_PACKAGE_alist=y" >> .config
-          echo "CONFIG_PACKAGE_luci-app-alist=y" >> .config
-          
-          echo "Ensure LuCI base is selected for luci-app-alist:"
-          echo "CONFIG_PACKAGE_luci-base=y" >> .config
-          
-          echo "Re-run defconfig to apply changes:"
-          make defconfig V=s
-          
-          echo "Verify USBUtils and Alist configuration:"
-          grep -E "CONFIG_PACKAGE_(usbutils|lsusb|usb-devices|alist|luci-app-alist|luci-base)" .config | sort
-          echo "===== USBUTILS AND ALIST CONFIG FIX END ====="
-
       - name: Fix CUPS Configuration for Main Branch
         working-directory: ./openwrt
         run: |
