@@ -1,0 +1,45 @@
+name: Diagnostic Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      
+      - name: Setup environment
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget mkbootimg device-tree-compiler ccache
+      
+      - name: Clone OpenWrt
+        run: |
+          git clone --depth 1 --branch openwrt-25.12 https://github.com/xiangtailiang/openwrt.git openwrt
+          cd openwrt
+          cp ../config/xg-040g-md.config .config
+          make defconfig
+      
+      - name: Diagnostic Analysis
+        run: |
+          cd openwrt
+          echo "=== 1. 检查 build_dir/target-*/rootfs ==="
+          mkdir -p build_dir/target-mvebu-cortexa9/rootfs
+          ls -la build_dir/target-*/rootfs/ 2>/dev/null
+          du -sh build_dir/target-*/rootfs/ 2>/dev/null
+          
+          echo -e "\n=== 2. 找最大的 .so 文件 ==="
+          find build_dir/target-*/rootfs/ -name "*.so*" -type f 2>/dev/null | xargs ls -lh 2>/dev/null | sort -rh -k5 | head -10
+          
+          echo -e "\n=== 3. 检查 Root filesystem partition size ==="
+          grep -r "CONFIG_TARGET_ROOTFS" .config
+          grep -r "partition" .config | head -10
+          
+          echo -e "\n=== 4. 检查 libc 和 python ==="
+          grep -r "python" .config | head -10
+          grep -r "libc" .config | head -10
+          
+          echo -e "\n=== 5. 检查调试模块 ==="
+          grep -r "debug" .config | head -20
