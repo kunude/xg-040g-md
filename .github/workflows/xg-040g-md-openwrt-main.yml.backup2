@@ -127,6 +127,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
+      - name: Ensure Required Packages
+        working-directory: ./openwrt
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/ensure-packages.sh
+          bash $GITHUB_WORKSPACE/scripts/ensure-packages.sh
+
       - name: Install third-party packages (homeproxy, passwall)
         working-directory: ./openwrt/package
         run: |
@@ -138,12 +144,6 @@ jobs:
           cp -fv "${CONFIG_FILE}" openwrt/.config
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
-
-      - name: Ensure Required Packages
-        working-directory: ./openwrt
-        run: |
-          # 注意这里使用 ../ 指向根目录下的脚本
-          bash ../scripts/ensure-packages.sh
 
       - name: Verify Config
         working-directory: ./openwrt

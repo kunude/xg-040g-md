@@ -1,4 +1,4 @@
-name: Build_XG_040G_MD_OpenWrt_Main
+name: Build_XG_040G_MD_OpenWrt_25_12
 
 permissions:
   contents: write
@@ -16,16 +16,15 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/xg-040g-md-openwrt-main.yml"
+      - ".github/workflows/xg-040g-md-openwrt-25.12.yml"
       - "config/**"
       - "scripts/**"
-      - "patch/**"
       - "feeds.conf.default"
 
 env:
   CONFIG_FILE: "config/xg-040g-md.config"
   REPO_URL: https://github.com/xiangtailiang/openwrt.git
-  REPO_BRANCH: main
+  REPO_BRANCH: openwrt-25.12
   FEEDS_CONF: feeds.conf.default
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -65,8 +64,7 @@ jobs:
             build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
             python3-setuptools rsync swig unzip zlib1g-dev file wget \
-            mkbootimg device-tree-compiler ccache \
-            lua5.3 liblua5.3-dev libreadline-dev liblua5.3-0
+            mkbootimg device-tree-compiler ccache
           if command -v mkbootimg >/dev/null 2>&1; then
             echo "mkbootimg found at: $(command -v mkbootimg)"
           else
@@ -84,7 +82,7 @@ jobs:
           python3 -m pip install --upgrade pip setuptools wheel
           python3 -m pip install Unidecode
 
-      - name: Clone OpenWrt source code (openwrt-main)
+      - name: Clone OpenWrt source code (openwrt-25.12)
         run: |
           git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" openwrt
 
@@ -126,31 +124,54 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
+          
+      - name: Debug CUPS Feed Status
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS FEED DEBUG START ====="
+          echo "检查 CUPS 相关包在 feeds 中的状态:"
+          ./scripts/feeds list | grep -i "cups\|lpq\|lpr" || echo "未找到 CUPS 相关包"
+          echo "检查 luci-app-cups 包:"
+          ./scripts/feeds list | grep -i "luci.*cups" || echo "未找到 luci-app-cups"
+          echo "检查 luci-app-cupsd 包 (旧版命名):"
+          ./scripts/feeds list | grep -i "luci.*cupsd" || echo "未找到 luci-app-cupsd"
+          echo "检查所有 luCI 应用包:"
+          ./scripts/feeds list | grep -i "luci-app" | head -20
+          echo "检查 CUPS 依赖包:"
+          ./scripts/feeds list | grep -i "libcups\|cups-filters\|ghostscript\|pstoraster\|foomatic" || echo "未找到 CUPS 依赖包"
+          echo "===== CUPS FEED DEBUG END ====="
 
       - name: Install third-party packages (homeproxy, passwall)
         working-directory: ./openwrt/package
         run: |
           chmod +x $GITHUB_WORKSPACE/scripts/update-packages.sh
           bash $GITHUB_WORKSPACE/scripts/update-packages.sh
+          
+      - name: Fix CUPS LuCI Compatibility
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS LuCI COMPATIBILITY FIX ====="
+          echo "检查 feeds 更新状态:"
+          ./scripts/feeds update -a
+          echo "尝试安装 luci-app-cupsd (openwrt-25.12 兼容版本):"
+          ./scripts/feeds install luci-app-cupsd || echo "luci-app-cupsd 安装失败"
+          echo "如果 luci-app-cupsd 不可用，尝试 luci-app-cups:"
+          ./scripts/feeds install luci-app-cups || echo "luci-app-cups 也安装失败"
+          echo "检查已安装的 CUPS 相关包:"
+          ./scripts/feeds list | grep -i "cups" | head -20
+          echo "===== COMPATIBILITY FIX END ====="
+          
+      - name: Hotfix rust llvm CI option
+        working-directory: ./openwrt
+        run: |
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/'             feeds/packages/lang/rust/Makefile
+          grep -n "download-ci-llvm" feeds/packages/lang/rust/Makefile
 
       - name: Copy configuration and defconfig
         run: |
           cp -fv "${CONFIG_FILE}" openwrt/.config
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
-
-      - name: Ensure Required Packages
-        working-directory: ./openwrt
-        run: |
-          # 注意这里使用 ../ 指向根目录下的脚本
-          bash ../scripts/ensure-packages.sh
-
-      - name: Verify Config
-        working-directory: ./openwrt
-        run: |
-          echo "=== Verifying CUPS & OpenClash Config ==="
-          grep -E "CONFIG_PACKAGE_(cups|libcups|cups-filters|lpr|lpq|luci-app-cups|openclash|luci-app-openclash|luci-i18n-openclash)" .config | sort
-          echo "✅ Config verification completed"
 
       - name: Upload build config files
         uses: actions/upload-artifact@v6
@@ -226,7 +247,7 @@ jobs:
         run: |
           echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           cat <<EOF > release.txt
-          🚀 OpenWrt firmware for XG-040G-MD (openwrt-main)
+          🚀 OpenWrt firmware for XG-040G-MD (openwrt-25.12)
           ----------------------
           设备型号: XG-040G-MD
           构建时间: $(date +"%Y-%m-%d %H:%M")
