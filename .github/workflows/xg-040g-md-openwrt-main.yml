@@ -127,71 +127,17 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f
 
+      - name: Ensure Required Packages
+        working-directory: ./openwrt
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/ensure-packages.sh
+          bash $GITHUB_WORKSPACE/scripts/ensure-packages.sh
+
       - name: Install third-party packages (homeproxy, passwall)
         working-directory: ./openwrt/package
         run: |
           chmod +x $GITHUB_WORKSPACE/scripts/update-packages.sh
           bash $GITHUB_WORKSPACE/scripts/update-packages.sh
-
-      - name: Debug CUPS and OpenClash Feed Status
-        working-directory: ./openwrt
-        run: |
-          echo "===== CUPS FEED DEBUG START ====="
-          echo "检查 CUPS 核心包:"
-          ./scripts/feeds list | grep -i "^cups$" || echo "❌ CUPS 核心包未找到"
-          echo "检查 LuCI CUPS 管理界面:"
-          ./scripts/feeds list | grep -i "luci.*cups" || echo "⚠️  luci-app-cups 未找到"
-          echo "检查 CUPS 依赖包:"
-          ./scripts/feeds list | grep -iE "(libcups|cups-filters|ghostscript)" || echo "⚠️  CUPS 依赖包不完整"
-          echo "检查所有可用的 LuCI 应用:"
-          ./scripts/feeds list | grep -i "luci-app" | head -30
-          echo "===== CUPS FEED DEBUG END ====="
-
-          echo " "
-          echo "===== OPENCLASH FEED DEBUG START ====="
-          echo "检查 OpenClash 核心包:"
-          ./scripts/feeds list | grep -i "^openclash$" || echo "❌ OpenClash 核心包未找到"
-          echo "检查 LuCI OpenClash 管理界面:"
-          ./scripts/feeds list | grep -i "luci.*openclash" || echo "⚠️  luci-app-openclash 未找到"
-          echo "检查 OpenClash 依赖包:"
-          ./scripts/feeds list | grep -iE "(libcap|libev|libmbedtls|libpcre|libyaml)" || echo "⚠️  OpenClash 依赖包不完整"
-          echo "检查 Clash 内核相关包:"
-          ./scripts/feeds list | grep -iE "(clash|meta|core)" | head -10
-          echo "===== OPENCLASH FEED DEBUG END ====="
-
-      - name: Explicitly Install CUPS and LuCI Packages
-        working-directory: ./openwrt
-        run: |
-          echo "===== EXPLICIT CUPS INSTALLATION ====="
-          echo "强制安装 CUPS 核心包:"
-          ./scripts/feeds install cups libcups cups-filters || echo "部分 CUPS 包安装失败"
-          echo "安装 LPR/LPQ 打印工具:"
-          ./scripts/feeds install lpr lpq || echo "⚠️  lpr/lpq 包可能不存在，使用 cups-client 替代"
-          echo "检查 cups-client 包:"
-          ./scripts/feeds list | grep -i "cups.*client" || echo "cups-client 也不可用"
-          echo "尝试安装 luci-app-cups (main 分支标准包名):"
-          ./scripts/feeds install luci-app-cups || echo "⚠️  luci-app-cups 安装失败"
-          echo "检查已安装的包:"
-          ./scripts/feeds list | grep -E "^(cups|libcups|cups-filters|lpr|lpq|luci-app-cups)" | sort
-          echo "===== EXPLICIT INSTALLATION END ====="
-
-      - name: Explicitly Install OpenClash Packages
-        working-directory: ./openwrt
-        run: |
-          echo "===== EXPLICIT OPENCLASH INSTALLATION ====="
-          echo "强制安装 OpenClash 核心包:"
-          ./scripts/feeds install openclash || echo "⚠️  OpenClash 核心包安装失败"
-          echo "强制安装 LuCI OpenClash 管理界面:"
-          ./scripts/feeds install luci-app-openclash || echo "⚠️  luci-app-openclash 安装失败"
-          echo "安装 OpenClash 语言包:"
-          ./scripts/feeds install luci-i18n-openclash-zh-cn || echo "⚠️  OpenClash 语言包安装失败"
-          echo "安装 OpenClash 依赖包:"
-          ./scripts/feeds install libcap libev libmbedtls libpcre libyaml libruby || echo "⚠️  部分 OpenClash 依赖包安装失败"
-          echo "检查已安装的 OpenClash 相关包:"
-          ./scripts/feeds list | grep -E "^(openclash|luci-app-openclash|luci-i18n-openclash)" | sort
-          echo "检查 OpenClash 依赖包:"
-          ./scripts/feeds list | grep -E "^(libcap|libev|libmbedtls|libpcre|libyaml|libruby)" | sort
-          echo "===== EXPLICIT OPENCLASH INSTALLATION END ====="
 
       - name: Copy configuration and defconfig
         run: |
@@ -199,82 +145,12 @@ jobs:
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
 
-      - name: Fix CUPS Configuration for Main Branch
+      - name: Verify Config
         working-directory: ./openwrt
         run: |
-          echo "===== CUPS CONFIG FIX START ====="
-          echo "确保 CUPS 核心包被选中:"
-          echo "CONFIG_PACKAGE_cups=y" >> .config
-          echo "CONFIG_PACKAGE_libcups=y" >> .config
-          echo "CONFIG_PACKAGE_cups-filters=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-usb-printer=y" >> .config
-          
-          echo "确保 LPR/LPQ 包被选中:"
-          echo "CONFIG_PACKAGE_lpr=y" >> .config
-          echo "CONFIG_PACKAGE_lpq=y" >> .config
-          
-          echo "确保 LuCI 核心包被选中:"
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
-          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
-          
-          echo "选择 luci-app-cups (main 分支标准包名):"
-          echo "CONFIG_PACKAGE_luci-app-cups=y" >> .config
-          
-          echo "重新运行 defconfig 以应用更改:"
-          make defconfig V=s
-          
-          echo "验证最终配置:"
-          grep -E "CONFIG_PACKAGE_(cups|libcups|lpr|lpq|luci|luci-app-cups)" .config | sort
-          echo "===== CUPS CONFIG FIX END ====="
-
-      - name: Fix OpenClash Configuration for Main Branch
-        working-directory: ./openwrt
-        run: |
-          echo "===== OPENCLASH CONFIG FIX START ====="
-          echo "确保 OpenClash 核心包被选中:"
-          echo "CONFIG_PACKAGE_openclash=y" >> .config
-          
-          echo "确保 LuCI OpenClash 管理界面被选中:"
-          echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
-          
-          echo "确保 OpenClash 中文语言包被选中:"
-          echo "CONFIG_PACKAGE_luci-i18n-openclash-zh-cn=y" >> .config
-          
-          echo "确保 OpenClash 依赖包被选中:"
-          echo "CONFIG_PACKAGE_libcap=y" >> .config
-          echo "CONFIG_PACKAGE_libev=y" >> .config
-          echo "CONFIG_PACKAGE_libmbedtls=y" >> .config
-          echo "CONFIG_PACKAGE_libpcre=y" >> .config
-          echo "CONFIG_PACKAGE_libyaml=y" >> .config
-          echo "CONFIG_PACKAGE_libruby=y" >> .config
-          
-          echo "确保网络工具和防火墙支持:"
-          echo "CONFIG_PACKAGE_iptables=y" >> .config
-          echo "CONFIG_PACKAGE_ipset=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-iptables=y" >> .config
-          
-          echo "重新运行 defconfig 以应用更改:"
-          make defconfig V=s
-          
-          echo "验证最终配置:"
-          grep -E "CONFIG_PACKAGE_(openclash|luci-app-openclash|luci-i18n-openclash|libcap|libev|libmbedtls|libpcre|libyaml|libruby)" .config | sort
-          echo "===== OPENCLASH CONFIG FIX END ====="
-
-      - name: Debug CUPS Config Status
-        working-directory: ./openwrt
-        run: |
-          echo "===== CUPS CONFIG DEBUG START ====="
-          echo "检查 .config 中 CUPS 的最终状态:"
-          grep "CONFIG_PACKAGE_cups" .config || echo "❌ CUPS 未被选中"
-          grep "CONFIG_PACKAGE_libcups" .config || echo "❌ libcups 未被选中"
-          grep "CONFIG_PACKAGE_luci-app-cups" .config || echo "⚠️  luci-app-cups 未被选中"
-          echo "检查关键依赖状态:"
-          grep "CONFIG_PACKAGE_libusb-1.0" .config || echo "⚠️  libusb 未选中"
-          grep "CONFIG_PACKAGE_kmod-usb-printer" .config || echo "⚠️  kmod-usb-printer 未选中"
-          echo "检查 LuCI 状态:"
-          grep "CONFIG_PACKAGE_luci=" .config || echo "❌ LuCI 未被选中"
-          echo "===== CUPS CONFIG DEBUG END ====="
+          echo "=== Verifying CUPS & OpenClash Config ==="
+          grep -E "CONFIG_PACKAGE_(cups|libcups|cups-filters|lpr|lpq|luci-app-cups|openclash|luci-app-openclash|luci-i18n-openclash)" .config | sort
+          echo "✅ Config verification completed"
 
       - name: Upload build config files
         uses: actions/upload-artifact@v6
@@ -328,46 +204,6 @@ jobs:
         with:
           path: /mnt/openwrt/ccache
           key: ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-ccache-v2-${{ github.run_id }}
-
-      - name: Debug CUPS and OpenClash APK Output
-        if: env.UPLOAD_FIRMWARE == 'true'
-        run: |
-          echo "===== CUPS ARTIFACT DEBUG START ====="
-          echo "搜索生成的 CUPS 安装包:"
-          find bin/packages -name "*cups*.apk" 2>/dev/null || echo "❌ 未找到 CUPS apk"
-          echo "检查 LPR/LPQ 安装包:"
-          find bin/packages -name "*lpr*.apk" -o -name "*lpq*.apk" 2>/dev/null || echo "⚠️  未找到 LPR/LPQ apk"
-          echo "检查 LuCI CUPS 安装包:"
-          find bin/packages -name "*luci*cups*.apk" 2>/dev/null || echo "❌ 未找到 luci-app-cups apk"
-          echo "列出所有 CUPS 相关包:"
-          find bin/packages -name "*.apk" -exec grep -l "cups" {} \; 2>/dev/null | head -10
-          echo "===== CUPS ARTIFACT DEBUG END ====="
-
-          echo " "
-          echo "===== OPENCLASH ARTIFACT DEBUG START ====="
-          echo "搜索生成的 OpenClash 安装包:"
-          find bin/packages -name "*openclash*.apk" 2>/dev/null || echo "❌ 未找到 OpenClash apk"
-          echo "检查 LuCI OpenClash 安装包:"
-          find bin/packages -name "*luci*openclash*.apk" 2>/dev/null || echo "❌ 未找到 luci-app-openclash apk"
-          echo "检查 OpenClash 语言包:"
-          find bin/packages -name "*luci*i18n*openclash*.apk" 2>/dev/null || echo "⚠️  未找到 OpenClash 语言包 apk"
-          echo "列出所有 OpenClash 相关包:"
-          find bin/packages -name "*.apk" -exec grep -l "openclash" {} \; 2>/dev/null | head -10
-          echo "检查 Clash 内核相关包:"
-          find bin/packages -name "*clash*.apk" 2>/dev/null | head -10
-          echo "===== OPENCLASH ARTIFACT DEBUG END ====="
-
-      - name: Check LPR LPQ Compatibility
-        working-directory: ./openwrt
-        run: |
-          echo "===== LPR LPQ COMPATIBILITY CHECK ====="
-          echo "检查 lpr 包是否存在:"
-          ./scripts/feeds list | grep -i "^lpr$" || echo "⚠️  lpr 包未找到"
-          echo "检查 lpq 包是否存在:"
-          ./scripts/feeds list | grep -i "^lpq$" || echo "⚠️  lpq 包未找到"
-          echo "检查 legacy printing packages:"
-          ./scripts/feeds list | grep -iE "(lpr|lpq|printproto|cups.*client)" | head -10
-          echo "===== COMPATIBILITY CHECK END ====="
 
       - name: Prepare firmware artifacts path
         id: organize
