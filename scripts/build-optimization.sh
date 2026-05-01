@@ -39,7 +39,7 @@ optimize_ccache() {
 
     # Set ccache options
     ccache -M "$MAX_CCACHE_SIZE"
-    ccache --set-config=hardlink=true
+    ccache --set-config=hard_links=true
     ccache --set-config=compress=true
     ccache --set-config=compress_level=9
     ccache --set-config=sloppiness="include_file_mtime,include_file_ctime,time_macros"
