@@ -158,8 +158,7 @@ jobs:
       - name: Ensure Required Packages
         working-directory: ./openwrt
         run: |
-          # 注意这里使用 ../ 指向根目录下的脚本
-          bash ../scripts/ensure-packages.sh
+          bash $GITHUB_WORKSPACE/scripts/ensure-packages.sh
 
       - name: Verify Config
         working-directory: ./openwrt
