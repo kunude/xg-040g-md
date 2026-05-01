@@ -62,9 +62,9 @@ cleanup_build_area() {
     find /tmp -type d -empty -delete 2>/dev/null || true
     find /var/tmp -type d -empty -delete 2>/dev/null || true
 
-    # Clean package caches
-    rm -rf /var/lib/apt/lists/*
-    rm -rf /var/cache/apt/archives/*.deb
+    # Clean package caches (use apt-get clean instead of rm -rf to avoid permission issues)
+    apt-get clean -y 2>/dev/null || true
+    rm -rf /var/cache/apt/archives/*.deb 2>/dev/null || true
 
     # Remove object files
     find . -maxdepth 3 -name "*.o" -delete 2>/dev/null || true
