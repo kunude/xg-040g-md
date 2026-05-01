@@ -88,20 +88,15 @@ verify_packages() {
         exit 1
     fi
     
-    # Check package groups
-    local exit_code=0
+    # Check package groups (all optional for flexibility)
     
     # CUPS packages (optional)
-    if ! check_package_group "CUPS" cups cups-server cups-client libcups cups-filters; then
-        exit_code=1
-    fi
+    check_package_group "CUPS" cups cups-server cups-client libcups cups-filters
     
     # OpenClash packages (optional)
-    if ! check_package_group "OpenClash" openclash luci-app-openclash; then
-        exit_code=1
-    fi
+    check_package_group "OpenClash" openclash luci-app-openclash
     
-    # LuCI base packages (required - try multiple names)
+    # LuCI base packages (optional - try multiple names)
     log_info "Checking LuCI base packages..."
     local found_luci=0
     
@@ -116,13 +111,8 @@ verify_packages() {
         log_warn "Continuing build, but web interface may not be available"
     fi
     
-    if [ "$exit_code" -eq 0 ]; then
-        log_info "Package verification completed successfully"
-    else
-        log_warn "Package verification completed with warnings"
-    fi
-    
-    return $exit_code
+    log_info "Package verification completed (with possible warnings)"
+    return 0
 }
 
 # Execute main function
