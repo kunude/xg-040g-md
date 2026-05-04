@@ -175,45 +175,166 @@ jobs:
             fi
           fi
 
+      - name: Check toolchain configuration
+        working-directory: ./openwrt
+        run: |
+          echo "=== Checking Toolchain Configuration ==="
+          echo "Target board: $TARGET_BOARD"
+          echo "Target subtarget: $TARGET_SUBTARGET"
+          echo "Target architecture: $TARGET_ARCH"
+          
+          # 检查配置文件
+          if [ -f ".config" ]; then
+            echo "✅ Config file found"
+            echo "Toolchain settings in config:"
+            grep -i "toolchain\|cross.*compiler\|gcc\|ARCH" .config | head -15
+          else
+            echo "❌ Config file not found!"
+            exit 1
+          fi
+          
+          # 检查make.conf
+          if [ -f "include/make.conf" ]; then
+            echo "✅ make.conf found"
+            echo "Toolchain settings in make.conf:"
+            grep -i "toolchain\|cross.*compiler\|gcc\|ARCH\|TARGET" include/make.conf | head -15
+          fi
+          
+          # 检查环境设置
+          echo "Environment variables:"
+          env | grep -i "target\|arch\|toolchain\|cross" | head -10
+
+      - name: Rebuild toolchain
+        working-directory: ./openwrt
+        run: |
+          echo "=== Rebuilding Toolchain ==="
+          
+          # 清理之前的工具链构建
+          echo "Cleaning previous toolchain build..."
+          make toolchain/clean 2>&1 | tee toolchain_clean.log || echo "Clean completed with warnings"
+          
+          # 重新配置
+          echo "Running defconfig..."
+          make defconfig 2>&1 | tee defconfig.log || echo "Defconfig completed with warnings"
+          
+          # 构建工具链（使用-j1确保顺序执行，避免竞态条件）
+          echo "Building toolchain with -j1 (this may take a while)..."
+          echo "Build started at: $(date)"
+          make toolchain/install -j1 2>&1 | tee toolchain_build.log
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          echo "Build completed at: $(date) with exit code: $BUILD_EXIT_CODE"
+          
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Toolchain build failed!"
+            echo "=== Last 100 lines of build log ==="
+            tail -100 toolchain_build.log
+            echo "=== Error summary ==="
+            grep -i "error\|fatal\|failed\|undefined\|missing" toolchain_build.log | tail -30
+            exit 1
+          fi
+          
+          echo "✅ Toolchain build completed successfully"
+
+      - name: Detailed toolchain diagnostics
+        working-directory: ./openwrt
+        run: |
+          echo "=== Detailed Toolchain Diagnostics ==="
+          
+          # 检查staging_dir结构
+          echo "staging_dir structure:"
+          find staging_dir -type d | head -20
+          
+          # 检查所有可能的交叉编译器
+          echo "=== Looking for all cross-compilers ==="
+          find staging_dir -type f -name "*gcc*" 2>/dev/null | head -20
+          
+          # 检查aarch64相关文件
+          echo "=== Looking for aarch64 files ==="
+          find staging_dir -type f -name "*aarch64*" 2>/dev/null | head -20
+          
+          # 检查环境脚本
+          echo "=== Looking for environment scripts ==="
+          find staging_dir -type f -name "env*" -o -name "setup*" 2>/dev/null | head -10
+          
+          # 检查工具链bin目录
+          echo "=== Contents of host/bin ==="
+          ls -la staging_dir/host/bin/ 2>/dev/null | head -30
+          
+          # 检查工具链libexec目录
+          echo "=== Checking libexec directories ==="
+          find staging_dir -type d -name "libexec" 2>/dev/null | head -5
+          for dir in $(find staging_dir -type d -name "libexec" 2>/dev/null | head -5); do
+            echo "Contents of $dir:"
+            ls -la $dir/ 2>/dev/null | head -20
+          done
+
       - name: Build and verify toolchain
         working-directory: ./openwrt
         run: |
           echo "=== Building and Verifying Toolchain ==="
           
-          # Build toolchain with reduced parallelism to avoid race conditions
-          make toolchain/install -j2 || {
-            echo "❌ Toolchain build failed! Retrying with -j1..."
-            make toolchain/clean
-            make toolchain/install -j1
-          }
+          # 验证工具链构建
+          echo "=== Verifying toolchain installation ==="
+          ls -la staging_dir/host/bin/ | grep -i aarch64 || echo "No aarch64 tools found in host/bin"
           
-          # Source the environment to ensure paths are set
-          if [ -f "$PWD/staging_dir/host/bin/env" ]; then
-            source $PWD/staging_dir/host/bin/env
-            echo "✅ Environment sourced"
+          # 检查交叉编译器（多个可能路径）
+          CROSS_CC_PATHS=(
+            "staging_dir/host/bin/aarch64-openwrt-linux-musl-gcc"
+            "staging_dir/host/bin/aarch64-openwrt-linux-gnu-gcc"
+            "staging_dir/host/bin/aarch64-linux-musl-gcc"
+            "staging_dir/host/bin/aarch64-linux-gnu-gcc"
+          )
+          
+          FOUND_CC=""
+          for cc_path in "${CROSS_CC_PATHS[@]}"; do
+            if [ -f "$cc_path" ]; then
+              FOUND_CC="$cc_path"
+              break
+            fi
+          done
+          
+          if [ -n "$FOUND_CC" ]; then
+            echo "✅ Cross-compiler found at: $FOUND_CC"
+            echo "Cross-compiler version:"
+            $FOUND_CC --version 2>&1 | head -5
           else
-            echo "⚠️  Environment script not found, continuing..."
-          fi
-          
-          # Verify toolchain with better path detection
-          TOOLCHAIN_PATH="$PWD/staging_dir/host/bin"
-          echo "Toolchain path: $TOOLCHAIN_PATH"
-          echo "Contents of toolchain path:"
-          ls -la $TOOLCHAIN_PATH/ 2>/dev/null || echo "Toolchain path not found"
-          
-          # Check for cross-compiler with full path
-          CROSS_CC="$TOOLCHAIN_PATH/aarch64-openwrt-linux-musl-gcc"
-          if [ -f "$CROSS_CC" ]; then
-            echo "✅ Toolchain installed successfully at $CROSS_CC"
-            $CROSS_CC --version
-          else
-            echo "❌ Toolchain missing at expected path: $CROSS_CC"
-            echo "Looking for aarch64 compiler in PATH..."
-            find $TOOLCHAIN_PATH -name "*aarch64*" -type f 2>/dev/null || echo "No aarch64 compiler found in toolchain path"
-            # Try to find any cross-compiler
-            find /usr -name "*aarch64*" -type f 2>/dev/null | head -5 || echo "No aarch64 compiler anywhere"
+            echo "❌ No cross-compiler found in expected paths:"
+            for cc_path in "${CROSS_CC_PATHS[@]}"; do
+              echo "  - $cc_path"
+            done
+            
+            # 搜索所有可能的交叉编译器
+            echo "=== Searching for any cross-compiler ==="
+            find staging_dir -type f -name "*gcc" -o -name "*g++" 2>/dev/null | head -20
+            
+            echo "=== Toolchain build log summary ==="
+            if [ -f "toolchain_build.log" ]; then
+              echo "Build log exists, checking for errors..."
+              grep -n -i "error\|fatal\|failed" toolchain_build.log | tail -20
+            fi
+            
             exit 1
           fi
+          
+          # 检查binutils
+          echo "=== Checking binutils ==="
+          CROSS_AR="staging_dir/host/bin/aarch64-openwrt-linux-musl-ar"
+          if [ -f "$CROSS_AR" ]; then
+            echo "✅ Cross-ar found"
+          else
+            echo "⚠️  Cross-ar not found, searching..."
+            find staging_dir -name "*ar" -type f 2>/dev/null | head -5
+          fi
+          
+          CROSS_LD="staging_dir/host/bin/aarch64-openwrt-linux-musl-ld"
+          if [ -f "$CROSS_LD" ]; then
+            echo "✅ Cross-ld found"
+          else
+            echo "⚠️  Cross-ld not found, searching..."
+            find staging_dir -name "*ld" -type f 2>/dev/null | head -5
+          fi
+          
+          echo "✅ Toolchain verification completed successfully"
 
       - name: Ensure Required Packages
         working-directory: ./openwrt
