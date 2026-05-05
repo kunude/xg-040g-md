@@ -32,11 +32,7 @@ env:
   KEEP_RELEASES: 20
   KEEP_RELEASE_MARKER: "[keep-release]"
   CCACHE_DIR: /mnt/openwrt/ccache
-  CCACHE_MAXSIZE: 3G
-  CCACHE_HARDLINK: true
-  CCACHE_COMPRESS: true
-  CCACHE_COMPRESSLEVEL: 9
-  CCACHE_SLOPPINESS: "include_file_mtime,include_file_ctime,time_macros"
+  CCACHE_MAXSIZE: 5G
   TZ: Asia/Shanghai
 
 jobs:
@@ -118,288 +114,167 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-ccache-v2-
 
+      - name: Setup ccache
+        run: |
+          mkdir -p "$CCACHE_DIR"
+          ccache -M "$CCACHE_MAXSIZE"
+          echo "ccache dir: $CCACHE_DIR"
+          ccache -s
+
+      - name: Update & Install feeds
+        working-directory: ./openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -f
+
+      - name: Install third-party packages (homeproxy, passwall)
+        working-directory: ./openwrt/package
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/update-packages.sh
+          bash $GITHUB_WORKSPACE/scripts/update-packages.sh
+
+      - name: Debug CUPS and OpenClash Feed Status
+        working-directory: ./openwrt
+        run: |
+          echo "===== CUPS FEED DEBUG START ====="
+          echo "检查 CUPS 核心包:"
+          ./scripts/feeds list | grep -i "^cups$" || echo "❌ CUPS 核心包未找到"
+          echo "检查 LuCI CUPS 管理界面:"
+          ./scripts/feeds list | grep -i "luci.*cups" || echo "⚠️  luci-app-cups 未找到"
+          echo "检查 CUPS 依赖包:"
+          ./scripts/feeds list | grep -iE "(libcups|cups-filters|ghostscript)" || echo "⚠️  CUPS 依赖包不完整"
+          echo "检查所有可用的 LuCI 应用:"
+          ./scripts/feeds list | grep -i "luci-app" | head -30
+          echo "===== CUPS FEED DEBUG END ====="
+
+          echo " "
+          echo "===== OPENCLASH FEED DEBUG START ====="
+          echo "检查 OpenClash 核心包:"
+          ./scripts/feeds list | grep -i "^openclash$" || echo "❌ OpenClash 核心包未找到"
+          echo "检查 LuCI OpenClash 管理界面:"
+          ./scripts/feeds list | grep -i "luci.*openclash" || echo "⚠️  luci-app-openclash 未找到"
+          echo "检查 OpenClash 依赖包:"
+          ./scripts/feeds list | grep -iE "(libcap|libev|libmbedtls|libpcre|libyaml)" || echo "⚠️  OpenClash 依赖包不完整"
+          echo "检查 Clash 内核相关包:"
+          ./scripts/feeds list | grep -iE "(clash|meta|core)" | head -10
+          echo "===== OPENCLASH FEED DEBUG END ====="
+
+      - name: Explicitly Install CUPS and LuCI Packages
+        working-directory: ./openwrt
+        run: |
+          echo "===== EXPLICIT CUPS INSTALLATION ====="
+          echo "强制安装 CUPS 核心包:"
+          ./scripts/feeds install cups libcups cups-filters || echo "部分 CUPS 包安装失败"
+          echo "安装 LPR/LPQ 打印工具:"
+          ./scripts/feeds install lpr lpq || echo "⚠️  lpr/lpq 包可能不存在，使用 cups-client 替代"
+          echo "检查 cups-client 包:"
+          ./scripts/feeds list | grep -i "cups.*client" || echo "cups-client 也不可用"
+          echo "尝试安装 luci-app-cups (main 分支标准包名):"
+          ./scripts/feeds install luci-app-cups || echo "⚠️  luci-app-cups 安装失败"
+          echo "检查已安装的包:"
+          ./scripts/feeds list | grep -E "^(cups|libcups|cups-filters|lpr|lpq|luci-app-cups)" | sort
+          echo "===== EXPLICIT INSTALLATION END ====="
+
+      - name: Explicitly Install OpenClash Packages
+        working-directory: ./openwrt
+        run: |
+          echo "===== EXPLICIT OPENCLASH INSTALLATION ====="
+          echo "强制安装 OpenClash 核心包:"
+          ./scripts/feeds install openclash || echo "⚠️  OpenClash 核心包安装失败"
+          echo "强制安装 LuCI OpenClash 管理界面:"
+          ./scripts/feeds install luci-app-openclash || echo "⚠️  luci-app-openclash 安装失败"
+          echo "安装 OpenClash 语言包:"
+          ./scripts/feeds install luci-i18n-openclash-zh-cn || echo "⚠️  OpenClash 语言包安装失败"
+          echo "安装 OpenClash 依赖包:"
+          ./scripts/feeds install libcap libev libmbedtls libpcre libyaml libruby || echo "⚠️  部分 OpenClash 依赖包安装失败"
+          echo "检查已安装的 OpenClash 相关包:"
+          ./scripts/feeds list | grep -E "^(openclash|luci-app-openclash|luci-i18n-openclash)" | sort
+          echo "检查 OpenClash 依赖包:"
+          ./scripts/feeds list | grep -E "^(libcap|libev|libmbedtls|libpcre|libyaml|libruby)" | sort
+          echo "===== EXPLICIT OPENCLASH INSTALLATION END ====="
+
       - name: Copy configuration and defconfig
         run: |
           cp -fv "${CONFIG_FILE}" openwrt/.config
           cd openwrt && make defconfig
           [ -e .config ] && cp .config defconfig-final.config
 
-      - name: Validate kernel config
-        run: |
-          OPENWRT_DIR="$PWD/openwrt"
-          KERNEL_CONFIG_PATH="$OPENWRT_DIR/build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.12.85/.config"
-          
-          echo "=== Kernel Config Validation ==="
-          echo "Expected config path: $KERNEL_CONFIG_PATH"
-          
-          if [ ! -f "$KERNEL_CONFIG_PATH" ]; then
-            echo "❌ Kernel config missing! Regenerating..."
-            cd $OPENWRT_DIR && make defconfig
-            echo "Kernel config regenerated"
-          else
-            echo "✅ Kernel config exists"
-          fi
-          
-          echo "Config files in build_dir:"
-          find $OPENWRT_DIR/build_dir -name ".config" 2>/dev/null | head -10 || echo "No config files found"
-
-      - name: Install additional dependencies
-        run: |
-          echo "=== Installing additional dependencies ==="
-          sudo apt update
-          sudo apt install -y \
-            libruby3.0 libpam0g libtirpc3 libev4 liblzma5 libzstd1 \
-            libnetsnmp35 libssl3 liblua5.3-0 libreadline8 \
-            libruby3.0-dev libpam0g-dev libtirpc-dev libev-dev liblzma-dev libzstd-dev \
-            libnetsnmp-dev libssl-dev liblua5.3-dev libreadline-dev || echo "Some dependencies may not be available, continuing..."
-
-      - name: Debug toolchain environment
+      - name: Fix CUPS Configuration for Main Branch
         working-directory: ./openwrt
         run: |
-          echo "=== Debugging Toolchain Environment ==="
-          echo "Working directory: $PWD"
-          echo "PATH: $PATH"
-          echo "HOST: $(uname -m)"
-          echo "Target: aarch64-openwrt-linux-musl"
+          echo "===== CUPS CONFIG FIX START ====="
+          echo "确保 CUPS 核心包被选中:"
+          echo "CONFIG_PACKAGE_cups=y" >> .config
+          echo "CONFIG_PACKAGE_libcups=y" >> .config
+          echo "CONFIG_PACKAGE_cups-filters=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-printer=y" >> .config
           
-          # Check toolchain directory structure
-          echo "Staging dir contents:"
-          ls -la staging_dir/ 2>/dev/null || echo "staging_dir not found"
+          echo "确保 LPR/LPQ 包被选中:"
+          echo "CONFIG_PACKAGE_lpr=y" >> .config
+          echo "CONFIG_PACKAGE_lpq=y" >> .config
           
-          if [ -d "staging_dir/host" ]; then
-            echo "Host toolchain dir:"
-            ls -la staging_dir/host/ 2>/dev/null || echo "host dir not found"
-            if [ -d "staging_dir/host/bin" ]; then
-              echo "Host bin dir:"
-              ls -la staging_dir/host/bin/ 2>/dev/null || echo "host/bin not found"
-            fi
-          fi
+          echo "确保 LuCI 核心包被选中:"
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-ssl=y" >> .config
+          echo "CONFIG_LUCI_LANG_zh_Hans=y" >> .config
+          
+          echo "选择 luci-app-cups (main 分支标准包名):"
+          echo "CONFIG_PACKAGE_luci-app-cups=y" >> .config
+          
+          echo "重新运行 defconfig 以应用更改:"
+          make defconfig V=s
+          
+          echo "验证最终配置:"
+          grep -E "CONFIG_PACKAGE_(cups|libcups|lpr|lpq|luci|luci-app-cups)" .config | sort
+          echo "===== CUPS CONFIG FIX END ====="
 
-      - name: Check toolchain configuration
+      - name: Fix OpenClash Configuration for Main Branch
         working-directory: ./openwrt
         run: |
-          echo "=== Checking Toolchain Configuration ==="
-          echo "Target board: $TARGET_BOARD"
-          echo "Target subtarget: $TARGET_SUBTARGET"
-          echo "Target architecture: $TARGET_ARCH"
+          echo "===== OPENCLASH CONFIG FIX START ====="
+          echo "确保 OpenClash 核心包被选中:"
+          echo "CONFIG_PACKAGE_openclash=y" >> .config
           
-          # 检查配置文件
-          if [ -f ".config" ]; then
-            echo "✅ Config file found"
-            echo "Toolchain settings in config:"
-            grep -i "toolchain\|cross.*compiler\|gcc\|ARCH" .config | head -15
-          else
-            echo "❌ Config file not found!"
-            exit 1
-          fi
+          echo "确保 LuCI OpenClash 管理界面被选中:"
+          echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
           
-          # 检查make.conf
-          if [ -f "include/make.conf" ]; then
-            echo "✅ make.conf found"
-            echo "Toolchain settings in make.conf:"
-            grep -i "toolchain\|cross.*compiler\|gcc\|ARCH\|TARGET" include/make.conf | head -15
-          fi
+          echo "确保 OpenClash 中文语言包被选中:"
+          echo "CONFIG_PACKAGE_luci-i18n-openclash-zh-cn=y" >> .config
           
-          # 检查环境设置
-          echo "Environment variables:"
-          env | grep -i "target\|arch\|toolchain\|cross" | head -10
+          echo "确保 OpenClash 依赖包被选中:"
+          echo "CONFIG_PACKAGE_libcap=y" >> .config
+          echo "CONFIG_PACKAGE_libev=y" >> .config
+          echo "CONFIG_PACKAGE_libmbedtls=y" >> .config
+          echo "CONFIG_PACKAGE_libpcre=y" >> .config
+          echo "CONFIG_PACKAGE_libyaml=y" >> .config
+          echo "CONFIG_PACKAGE_libruby=y" >> .config
+          
+          echo "确保网络工具和防火墙支持:"
+          echo "CONFIG_PACKAGE_iptables=y" >> .config
+          echo "CONFIG_PACKAGE_ipset=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-iptables=y" >> .config
+          
+          echo "重新运行 defconfig 以应用更改:"
+          make defconfig V=s
+          
+          echo "验证最终配置:"
+          grep -E "CONFIG_PACKAGE_(openclash|luci-app-openclash|luci-i18n-openclash|libcap|libev|libmbedtls|libpcre|libyaml|libruby)" .config | sort
+          echo "===== OPENCLASH CONFIG FIX END ====="
 
-      - name: Rebuild toolchain
+      - name: Debug CUPS Config Status
         working-directory: ./openwrt
         run: |
-          echo "=== Rebuilding Toolchain ==="
-          
-          # 清理之前的工具链构建
-          echo "Cleaning previous toolchain build..."
-          make toolchain/clean 2>&1 | tee toolchain_clean.log || echo "Clean completed with warnings"
-          
-          # 重新配置
-          echo "Running defconfig..."
-          make defconfig 2>&1 | tee defconfig.log || echo "Defconfig completed with warnings"
-          
-          # 构建工具链（使用-j1确保顺序执行，避免竞态条件）
-          echo "Building toolchain with -j1 (this may take a while)..."
-          echo "Build started at: $(date)"
-          make toolchain/install -j1 2>&1 | tee toolchain_build.log
-          BUILD_EXIT_CODE=${PIPESTATUS[0]}
-          echo "Build completed at: $(date) with exit code: $BUILD_EXIT_CODE"
-          
-          if [ $BUILD_EXIT_CODE -ne 0 ]; then
-            echo "❌ Toolchain build failed!"
-            echo "=== Last 100 lines of build log ==="
-            tail -100 toolchain_build.log
-            echo "=== Error summary ==="
-            grep -i "error\|fatal\|failed\|undefined\|missing" toolchain_build.log | tail -30
-            exit 1
-          fi
-          
-          echo "✅ Toolchain build completed successfully"
-
-      - name: Verify toolchain installation
-        working-directory: ./openwrt
-        run: |
-          echo "=== Verifying toolchain installation ==="
-          
-          # 检查工具链构建日志
-          if [ -f "toolchain_build.log" ]; then
-            echo "Toolchain build log exists"
-            grep -i "install\|copy\|cp " toolchain_build.log | tail -20
-          fi
-          
-          # 检查所有可能的安装路径
-          echo "=== Checking all possible installation paths ==="
-          find . -type d -name "bin" 2>/dev/null | grep -E "staging|host|toolchain" | head -10
-          
-          # 检查所有可能的交叉编译器路径
-          echo "=== Checking all possible cross-compiler paths ==="
-          find . -type f -name "*gcc*" 2>/dev/null | grep -E "aarch64|openwrt" | head -20
-          
-          # 检查工具链配置
-          echo "=== Checking toolchain configuration ==="
-          if [ -f ".config" ]; then
-            grep -i "toolchain\|cross.*compiler\|ARCH" .config | head -20
-          fi
-
-      - name: Setup toolchain environment
-        working-directory: ./openwrt
-        run: |
-          echo "=== Setting up toolchain environment ==="
-          
-          # 检查并source环境脚本
-          if [ -f "staging_dir/host/bin/env" ]; then
-            echo "Sourcing environment script"
-            source staging_dir/host/bin/env
-          fi
-          
-          # 添加工具链路径到PATH
-          if [ -d "staging_dir/host/bin" ]; then
-            export PATH="$PWD/staging_dir/host/bin:$PATH"
-            echo "Added staging_dir/host/bin to PATH"
-          fi
-          
-          # 检查交叉编译器
-          echo "=== Checking cross-compiler availability ==="
-          which aarch64-openwrt-linux-musl-gcc || echo "Cross-compiler not found in PATH"
-          
-          # 显示所有可能的交叉编译器
-          find . -type f -executable -name "*aarch64*" 2>/dev/null | head -20
-
-      - name: Detailed toolchain diagnostics
-        working-directory: ./openwrt
-        run: |
-          echo "=== Detailed Toolchain Diagnostics ==="
-          
-          # 检查staging_dir结构
-          echo "staging_dir structure:"
-          find staging_dir -type d | head -20
-          
-          # 检查所有可能的交叉编译器
-          echo "=== Looking for all cross-compilers ==="
-          find staging_dir -type f -name "*gcc*" 2>/dev/null | head -20
-          
-          # 检查aarch64相关文件
-          echo "=== Looking for aarch64 files ==="
-          find staging_dir -type f -name "*aarch64*" 2>/dev/null | head -20
-          
-          # 检查环境脚本
-          echo "=== Looking for environment scripts ==="
-          find staging_dir -type f -name "env*" -o -name "setup*" 2>/dev/null | head -10
-          
-          # 检查工具链bin目录
-          echo "=== Contents of host/bin ==="
-          ls -la staging_dir/host/bin/ 2>/dev/null | head -30
-          
-          # 检查工具链libexec目录
-          echo "=== Checking libexec directories ==="
-          find staging_dir -type d -name "libexec" 2>/dev/null | head -5
-          for dir in $(find staging_dir -type d -name "libexec" 2>/dev/null | head -5); do
-            echo "Contents of $dir:"
-            ls -la $dir/ 2>/dev/null | head -20
-          done
-
-      - name: Build and verify toolchain
-        working-directory: ./openwrt
-        run: |
-          echo "=== Building and Verifying Toolchain ==="
-          
-          # 验证工具链构建
-          echo "=== Verifying toolchain installation ==="
-          ls -la staging_dir/host/bin/ | grep -i aarch64 || echo "No aarch64 tools found in host/bin"
-          
-          # 检查交叉编译器（多个可能路径）
-          CROSS_CC_PATHS=(
-            "staging_dir/host/bin/aarch64-openwrt-linux-musl-gcc"
-            "staging_dir/host/bin/aarch64-openwrt-linux-gnu-gcc"
-            "staging_dir/host/bin/aarch64-linux-musl-gcc"
-            "staging_dir/host/bin/aarch64-linux-gnu-gcc"
-          )
-          
-          FOUND_CC=""
-          for cc_path in "${CROSS_CC_PATHS[@]}"; do
-            if [ -f "$cc_path" ]; then
-              FOUND_CC="$cc_path"
-              break
-            fi
-          done
-          
-          if [ -n "$FOUND_CC" ]; then
-            echo "✅ Cross-compiler found at: $FOUND_CC"
-            echo "Cross-compiler version:"
-            $FOUND_CC --version 2>&1 | head -5
-          else
-            echo "❌ No cross-compiler found in expected paths:"
-            for cc_path in "${CROSS_CC_PATHS[@]}"; do
-              echo "  - $cc_path"
-            done
-            
-            # 搜索所有可能的交叉编译器
-            echo "=== Searching for any cross-compiler ==="
-            find staging_dir -type f -name "*gcc" -o -name "*g++" 2>/dev/null | head -20
-            
-            echo "=== Toolchain build log summary ==="
-            if [ -f "toolchain_build.log" ]; then
-              echo "Build log exists, checking for errors..."
-              grep -n -i "error\|fatal\|failed" toolchain_build.log | tail -20
-            fi
-            
-            exit 1
-          fi
-          
-          # 检查binutils
-          echo "=== Checking binutils ==="
-          CROSS_AR="staging_dir/host/bin/aarch64-openwrt-linux-musl-ar"
-          if [ -f "$CROSS_AR" ]; then
-            echo "✅ Cross-ar found"
-          else
-            echo "⚠️  Cross-ar not found, searching..."
-            find staging_dir -name "*ar" -type f 2>/dev/null | head -5
-          fi
-          
-          CROSS_LD="staging_dir/host/bin/aarch64-openwrt-linux-musl-ld"
-          if [ -f "$CROSS_LD" ]; then
-            echo "✅ Cross-ld found"
-          else
-            echo "⚠️  Cross-ld not found, searching..."
-            find staging_dir -name "*ld" -type f 2>/dev/null | head -5
-          fi
-          
-          echo "✅ Toolchain verification completed successfully"
-
-      - name: Ensure Required Packages
-        working-directory: ./openwrt
-        run: |
-          # Skip package checks for openwrt-main compatibility
-          echo "⚠️  Skipping package checks for openwrt-main compatibility"
-          echo "⚠️  Packages like cups-filters, openclash, luci-app-openclash are not available"
-          echo "⚠️  Build will continue with available packages only"
-          echo "✅ Package verification completed (skipped)"
-
-      - name: Verify Config
-        working-directory: ./openwrt
-        run: |
-          echo "=== Verifying CUPS & OpenClash Config ==="
-          grep -E "CONFIG_PACKAGE_(cups|libcups|cups-filters|lpr|lpq|luci-app-cups|openclash|luci-app-openclash|luci-i18n-openclash)" .config | sort
-          echo "✅ Config verification completed"
+          echo "===== CUPS CONFIG DEBUG START ====="
+          echo "检查 .config 中 CUPS 的最终状态:"
+          grep "CONFIG_PACKAGE_cups" .config || echo "❌ CUPS 未被选中"
+          grep "CONFIG_PACKAGE_libcups" .config || echo "❌ libcups 未被选中"
+          grep "CONFIG_PACKAGE_luci-app-cups" .config || echo "⚠️  luci-app-cups 未被选中"
+          echo "检查关键依赖状态:"
+          grep "CONFIG_PACKAGE_libusb-1.0" .config || echo "⚠️  libusb 未选中"
+          grep "CONFIG_PACKAGE_kmod-usb-printer" .config || echo "⚠️  kmod-usb-printer 未选中"
+          echo "检查 LuCI 状态:"
+          grep "CONFIG_PACKAGE_luci=" .config || echo "❌ LuCI 未被选中"
+          echo "===== CUPS CONFIG DEBUG END ====="
 
       - name: Upload build config files
         uses: actions/upload-artifact@v6
@@ -410,197 +285,31 @@ jobs:
             openwrt/defconfig-final.config
             openwrt/feeds.conf.default
 
-      - name: Clean up before compile
-        working-directory: ./openwrt
-        run: |
-          echo "=== Cleaning up before compile ==="
-          echo "Disk usage before cleanup: $(df -h . | awk 'NR==2{print $4}')"
-          
-          # 清理apt缓存
-          sudo apt-get clean -y
-          sudo rm -rf /var/lib/apt/lists/*
-          
-          # 清理临时文件
-          sudo rm -rf /tmp/* /var/tmp/*
-          
-          # 清理git对象
-          find . -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-          
-          # 清理下载的源码包
-          find dl -name "*.src.tar.gz" -delete 2>/dev/null || true
-          
-          # 清理旧的构建产物
-          find build_dir -name "*.o" -delete 2>/dev/null || true
-          find build_dir -name "*.a" -delete 2>/dev/null || true
-          
-          echo "Disk usage after cleanup: $(df -h . | awk 'NR==2{print $4}')"
-          echo "Memory available: $(free -h | awk '/^Mem:/{print $2}')GB"
-
       - name: Download packages
         working-directory: ./openwrt
         run: |
-          echo "=== Downloading packages with validation ==="
-          
-          # Test kernel config before download
-          KERNEL_CONFIG="$PWD/build_dir/target-aarch64_cortex-a53_musl/linux-airoha_an7581/linux-6.12.85/.config"
-          if [ ! -f "$KERNEL_CONFIG" ]; then
-            echo "❌ Kernel config missing before download! Regenerating..."
-            make defconfig
-          fi
-          
-          # Download with error handling
-          if ! make download -j2 V=s; then
-            echo "❌ Download failed! Checking kernel config..."
-            if [ ! -f "$KERNEL_CONFIG" ]; then
-              echo "❌ Kernel config still missing!"
-              echo "Available files in build_dir:"
-              find build_dir -type f -name "*.config" 2>/dev/null | head -5 || echo "No config files"
-              exit 1
-            fi
-            # Retry with -j1
-            echo "Retrying download with -j1..."
-            make download -j1 V=s || {
-              echo "❌ Download failed again!"
-              exit 1
-            }
-          fi
-          
+          make download -j4 V=s
           # Remove small incomplete files <1KB
           find dl -size -1024c -delete
-          # Clean up unnecessary files to save space
-          find dl -name "*.src.tar.gz" -delete 2>/dev/null || true
-          find dl -name "*.git" -type d -exec rm -rf {} + 2>/dev/null || true
-          # Clean package cache to prevent bloat
-          rm -rf /var/lib/apt/lists/*
-          rm -rf /var/cache/apt/archives/*.deb
-
-      - name: Aggressive disk cleanup
-        working-directory: ./openwrt
-        run: |
-          echo "=== Aggressive Disk Cleanup ==="
-          echo "Disk usage before aggressive cleanup:"
-          df -h
-          
-          # Remove unnecessary build artifacts
-          find . -type f -name "*.o" -delete 2>/dev/null || true
-          find . -type f -name "*.a" -delete 2>/dev/null || true
-          find . -type f -name "*.ko" -delete 2>/dev/null || true
-          find . -type f -name "*.so" -delete 2>/dev/null || true
-          
-          # Clean up large temporary files
-          find . -type f -size +100M -delete 2>/dev/null || true
-          
-          # Clean package caches
-          find . -type d -name "cache" -exec rm -rf {} + 2>/dev/null || true
-          find . -type d -name "tmp" -exec rm -rf {} + 2>/dev/null || true
-          
-          # Clean downloaded source packages (keep only recent)
-          find dl -type f -name "*.tar.gz" -mtime +1 -delete 2>/dev/null || true
-          find dl -type f -name "*.zip" -mtime +1 -delete 2>/dev/null || true
-          
-          # Clean git repositories
-          find . -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
-          
-          # Clean apt and dpkg caches
-          rm -rf /var/lib/apt/lists/*
-          rm -rf /var/cache/apt/archives/*
-          rm -rf /var/cache/debconf/*
-          apt-get clean -y || true
-          
-          echo "Disk usage after aggressive cleanup:"
-          df -h
-          echo "Memory available:"
-          free -h
 
       - name: Compile OpenWrt firmware
         id: compile
         run: |
           cd openwrt
-          echo "=== Compile OpenWrt Firmware ==="
           echo "Disk usage before compile:"
           df -h
-
-          # Enhanced dynamic job calculation with safety margin
-          AVAILABLE_MEM=$(free -g | awk '/^Mem:/{print $2}')
-          AVAILABLE_DISK=$(df -BG . | awk 'NR==2{print $4}' | sed 's/G//')
-          
-          echo "Available memory: ${AVAILABLE_MEM}GB"
-          echo "Available disk: ${AVAILABLE_DISK}GB"
-          
-          # Conservative job calculation to prevent OOM
-          if [ "$AVAILABLE_MEM" -lt 4 ]; then
-            JOBS=1
-            echo "⚠️  Low memory detected, using single job"
-          elif [ "$AVAILABLE_MEM" -lt 8 ]; then
-            JOBS=2
-            echo "⚠️  Moderate memory, using 2 jobs"
-          elif [ "$AVAILABLE_MEM" -lt 12 ]; then
-            JOBS=3
-            echo "✅  Good memory, using 3 jobs"
-          else
-            JOBS=4
-            echo "✅  Ample memory, using 4 jobs"
-          fi
-          
-          # Further reduce jobs if disk space is limited
-          if [ "$AVAILABLE_DISK" -lt 10 ]; then
-            JOBS=1
-            echo "⚠️  Low disk space, reducing to single job"
-          fi
-          
-          echo "Using $JOBS parallel jobs based on available resources"
-
-          # Enhanced cleanup before build
-          echo "=== Enhanced cleanup ==="
-          rm -rf /tmp/* /var/tmp/*
-          find . -name "*.o" -delete 2>/dev/null || true
-          find . -name "*.a" -delete 2>/dev/null || true
-          find . -name "*.ko" -delete 2>/dev/null || true
-          
-          # Clean package cache aggressively
-          rm -rf /var/lib/apt/lists/*
-          rm -rf /var/cache/apt/archives/*
-          apt-get clean -y || true
-          
-          # Clean git repositories in feeds
-          find feeds -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
-          
-          echo "Disk usage after enhanced cleanup:"
-          df -h
-
-          # Compile with enhanced error handling and monitoring
           if [[ "${{ inputs.log_switch }}" == "true" ]]; then
-            echo "=== Compiling with verbose logging ==="
-            make -j1 V=s 2>&1 | tee compile.log || {
-              echo "❌ Compile failed with verbose logging"
-              echo "=== Error summary ==="
-              grep -i "error\|fatal\|failed\|out of memory" compile.log | tail -30
-              echo "=== Last 50 lines ==="
-              tail -50 compile.log
-              echo "=== Resource diagnostics ==="
-              echo "Memory usage:"
-              free -h
-              echo "Disk usage:"
+            make -j1 V=s || {
+              echo "Compile failed, disk usage diagnostics:"
               df -h
-              echo "Largest directories:"
-              du -h -d2 . | sort -h | tail -20
+              du -h -d1 . | sort -h | tail -n 30
               exit 1
             }
           else
-            echo "=== Compiling with $JOBS parallel jobs ==="
-            make -j$JOBS 2>&1 | tee compile.log || {
-              echo "❌ Compile failed with $JOBS parallel jobs"
-              echo "=== Error summary ==="
-              grep -i "error\|fatal\|failed\|out of memory" compile.log | tail -30
-              echo "=== Last 50 lines ==="
-              tail -50 compile.log
-              echo "=== Resource diagnostics ==="
-              echo "Memory usage:"
-              free -h
-              echo "Disk usage:"
+            make -j$(nproc) || {
+              echo "Compile failed, disk usage diagnostics:"
               df -h
-              echo "Largest directories:"
-              du -h -d2 . | sort -h | tail -20
+              du -h -d1 . | sort -h | tail -n 30
               exit 1
             }
           fi
@@ -610,7 +319,6 @@ jobs:
           fi
           echo "FILE_DATE=_$(date +%Y%m%d%H%M)" >> "$GITHUB_ENV"
           echo "status=success" >> $GITHUB_OUTPUT
-          echo "✅ Compile completed successfully"
           echo "ccache stats (env CCACHE_DIR=$CCACHE_DIR):"
           ccache -s || true
 
@@ -620,6 +328,46 @@ jobs:
         with:
           path: /mnt/openwrt/ccache
           key: ${{ runner.os }}-openwrt-${{ env.REPO_BRANCH }}-ccache-v2-${{ github.run_id }}
+
+      - name: Debug CUPS and OpenClash APK Output
+        if: env.UPLOAD_FIRMWARE == 'true'
+        run: |
+          echo "===== CUPS ARTIFACT DEBUG START ====="
+          echo "搜索生成的 CUPS 安装包:"
+          find bin/packages -name "*cups*.apk" 2>/dev/null || echo "❌ 未找到 CUPS apk"
+          echo "检查 LPR/LPQ 安装包:"
+          find bin/packages -name "*lpr*.apk" -o -name "*lpq*.apk" 2>/dev/null || echo "⚠️  未找到 LPR/LPQ apk"
+          echo "检查 LuCI CUPS 安装包:"
+          find bin/packages -name "*luci*cups*.apk" 2>/dev/null || echo "❌ 未找到 luci-app-cups apk"
+          echo "列出所有 CUPS 相关包:"
+          find bin/packages -name "*.apk" -exec grep -l "cups" {} \; 2>/dev/null | head -10
+          echo "===== CUPS ARTIFACT DEBUG END ====="
+
+          echo " "
+          echo "===== OPENCLASH ARTIFACT DEBUG START ====="
+          echo "搜索生成的 OpenClash 安装包:"
+          find bin/packages -name "*openclash*.apk" 2>/dev/null || echo "❌ 未找到 OpenClash apk"
+          echo "检查 LuCI OpenClash 安装包:"
+          find bin/packages -name "*luci*openclash*.apk" 2>/dev/null || echo "❌ 未找到 luci-app-openclash apk"
+          echo "检查 OpenClash 语言包:"
+          find bin/packages -name "*luci*i18n*openclash*.apk" 2>/dev/null || echo "⚠️  未找到 OpenClash 语言包 apk"
+          echo "列出所有 OpenClash 相关包:"
+          find bin/packages -name "*.apk" -exec grep -l "openclash" {} \; 2>/dev/null | head -10
+          echo "检查 Clash 内核相关包:"
+          find bin/packages -name "*clash*.apk" 2>/dev/null | head -10
+          echo "===== OPENCLASH ARTIFACT DEBUG END ====="
+
+      - name: Check LPR LPQ Compatibility
+        working-directory: ./openwrt
+        run: |
+          echo "===== LPR LPQ COMPATIBILITY CHECK ====="
+          echo "检查 lpr 包是否存在:"
+          ./scripts/feeds list | grep -i "^lpr$" || echo "⚠️  lpr 包未找到"
+          echo "检查 lpq 包是否存在:"
+          ./scripts/feeds list | grep -i "^lpq$" || echo "⚠️  lpq 包未找到"
+          echo "检查 legacy printing packages:"
+          ./scripts/feeds list | grep -iE "(lpr|lpq|printproto|cups.*client)" | head -10
+          echo "===== COMPATIBILITY CHECK END ====="
 
       - name: Prepare firmware artifacts path
         id: organize
