@@ -134,25 +134,39 @@ jobs:
         [ -e .config ] && cp .config defconfig-final.config
 
         '
-    - name: Apply unified static library optimization
+    - name: Apply firmware size optimization
       working-directory: ./openwrt
       run: |
-        echo "应用统一静态库配置..."
+        echo "应用固件尺寸优化配置..."
         
-        # 启用静态库编译
-        echo "CONFIG_STATIC=y" >> .config
-        echo "CONFIG_BUILD_SHARED=n" >> .config
+        # 全局去重：禁用静态链接，开启共享库
+        echo "CONFIG_STATIC=n" >> .config
+        echo "CONFIG_BUILD_SHARED=y" >> .config
+        echo "CONFIG_PACKAGE_libmtd=y" >> .config
+        echo "CONFIG_PACKAGE_libubi=y" >> .config
         
-        # 优化静态库配置
-        echo "CONFIG_PKG_STATIC=y" >> .config
-        echo "CONFIG_BUILD_STATIC=y" >> .config
+        # 彻底剥离：强制Strip和去除调试信息
+        echo "CONFIG_STRIP=y" >> .config
+        echo "CONFIG_STRIP_ALL=y" >> .config
+        find . -name "Makefile*" -exec sed -i 's/-g3/-g0/g' {} +
+        find . -name "*.mk" -exec sed -i 's/-g3/-g0/g' {} +
+        
+        # 精准瘦身：剔除宿主/调试工具
+        echo "CONFIG_PACKAGE_gdb=n" >> .config
+        echo "CONFIG_PACKAGE_elflint=n" >> .config
+        echo "CONFIG_PACKAGE_cmake=n" >> .config
+        
+        # 消除强制聚合：移除非必要整档案链接
+        find . -name "Makefile*" -exec sed -i 's/-Wl,--whole-archive/# -Wl,--whole-archive/g' {} +
+        find . -name "Makefile*" -exec sed -i 's/-all_load/# -all_load/g' {} +
+        find . -name "Makefile*" -exec sed -i 's/-force_load/# -force_load/g' {} +
         
         # 重新配置以应用更改
         make defconfig
         
-        # 验证配置
-        echo "=== 静态库配置验证 ==="
-        grep -E "CONFIG_(STATIC|BUILD)" .config
+        # 验证关键配置
+        echo "=== 优化配置验证 ==="
+        grep -E "CONFIG_(STATIC|BUILD_SHARED|STRIP)" .config
     - name: Upload build config files
       uses: actions/upload-artifact@v6
       with:
