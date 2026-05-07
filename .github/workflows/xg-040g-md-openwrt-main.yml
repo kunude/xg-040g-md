@@ -135,6 +135,10 @@ jobs:
 
         '
     - name: Apply static library optimization
-      run: "    cd openwrt\n    \n    # 应用统一静态库配置\n    echo \"CONFIG_STATIC=y\" >>\
-        \ .config\n    echo \"CONFIG_BUILD_SHARED=n\" >> .config\n    \n    # 重新配置\n\
-        \    make defconfig"
+      working-directory: ./openwrt
+      run: |
+        echo "应用统一静态库配置..."
+        echo "CONFIG_STATIC=y" >> .config
+        echo "CONFIG_BUILD_SHARED=n" >> .config
+        echo "重新配置..."
+        make defconfig
