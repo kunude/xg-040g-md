@@ -2,7 +2,7 @@ name: Build_XG_040G_MD_OpenWrt_Main
 permissions:
   contents: write
   actions: write
-true:
+on:
   workflow_dispatch:
     inputs:
       log_switch:
