@@ -134,10 +134,6 @@ jobs:
         [ -e .config ] && cp .config defconfig-final.config
 
         '
-    - name: Apply static library optimization
-      run: "    cd openwrt\n    \n    # 应用统一静态库配置\n    echo \"CONFIG_STATIC=y\" >>\
-        \ .config\n    echo \"CONFIG_BUILD_SHARED=n\" >> .config\n    \n    # 重新配置\n\
-        \    make defconfig"
     - name: Apply unified static library optimization
       working-directory: ./openwrt
       run: |
