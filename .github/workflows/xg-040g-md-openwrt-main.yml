@@ -129,7 +129,7 @@ jobs:
     - name: Copy configuration and defconfig
       run: 'cp -fv "${CONFIG_FILE}" openwrt/.config
 
-        cd openwrt && make defconfig
+        cd openwrt && make olddefconfig
 
         [ -e .config ] && cp .config defconfig-final.config
 
@@ -162,8 +162,10 @@ jobs:
         find . -name "Makefile*" -exec sed -i 's/-force_load/# -force_load/g' {} +
         
         # 重新配置以应用更改
+        make defconfig
+        # 确保配置同步
         make olddefconfig
-        
+
         # 验证关键配置
         echo "=== 优化配置验证 ==="
         grep -E "CONFIG_(STATIC|BUILD_SHARED|STRIP)" .config
