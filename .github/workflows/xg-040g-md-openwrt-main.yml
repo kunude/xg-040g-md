@@ -162,7 +162,7 @@ jobs:
         find . -name "Makefile*" -exec sed -i 's/-force_load/# -force_load/g' {} +
         
         # 重新配置以应用更改
-        make defconfig
+        make olddefconfig
         
         # 验证关键配置
         echo "=== 优化配置验证 ==="
