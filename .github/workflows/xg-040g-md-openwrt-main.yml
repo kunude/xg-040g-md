@@ -129,7 +129,7 @@ jobs:
     - name: Copy configuration and defconfig
       run: 'cp -fv "${CONFIG_FILE}" openwrt/.config
 
-        cd openwrt && make olddefconfig
+        cd openwrt cd openwrt && make defconfigcd openwrt && make defconfig TERM=xterm make defconfig
 
         [ -e .config ] && cp .config defconfig-final.config
 
@@ -164,7 +164,7 @@ jobs:
         # 重新配置以应用更改
         make defconfig
         # 确保配置同步
-        make olddefconfig
+        make defconfig
 
         # 验证关键配置
         echo "=== 优化配置验证 ==="
